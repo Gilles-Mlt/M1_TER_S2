@@ -21,6 +21,7 @@ from mininet.node import Controller, OVSSwitch
 from mininet.cli  import CLI
 from mininet.log  import setLogLevel, info
 from mininet.term import makeTerms, cleanUpScreens
+from mininet.node import Node
 
 import os
 import subprocess
@@ -30,9 +31,11 @@ import argparse
 import thread
 import threading
 
+from select import poll, POLLIN
+from time import time
 
 class Topology( Topo ):
-    "My second topology, Gilles MAILLOT, Dimanche 24 octobre 2020."
+    "Topology, Gilles MAILLOT, Lundi  01 mars 2021."
 
     def __init__( self, n ):
         "Create custom topo."
@@ -83,21 +86,64 @@ def simulate(numberOfHost):
     #appClient1.setIP('::FFFF:127.0.0.1')
 
     network.start()
-    #network.startTerms()	
-
-
-
+    #network.startTerms()
+    
     #On active TLP sur les hotes
     TLP_activation = "sysctl -w net.ipv4.tcp_early_retrans=3"
     #TLP_desactivation = "sysctl -w net.ipv4.tcp_early_retrans=0"
 
     for h in range(numberOfHost):
-        print (network.get('h%s' % (h + 1)).cmd(" echo 'hello client' "))
-        print (network.get('srv%s' % (h + 1)).cmd(" echo 'hello sevreur' "))
+        print (network.get('h%s' % (h + 1)).cmd(" echo 'Hello world ! From host h%s'" % (h + 1) ))
+        print (network.get('srv%s' % (h + 1)).cmd(" echo 'Hello world ! From sever srv%s'" % (h+1) ))
         
-    # for h in range(numberOfHost):
-    #     listHost[h].cmd(TLP_activation)
-    #     listSrv[h].cmd(TLP_activation)
+    for h in range(numberOfHost):
+        print("TLP Activation on whole host ansd servers")
+        print ( "From host h%s " % (h + 1) + network.get('h%s' % (h + 1)).cmd(TLP_activation))
+        print ( "From server srv%s " % (h + 1) + network.get('srv%s' % (h + 1)).cmd(TLP_activation))
+
+    for srv in range(numberOfHost):
+        print("Launch of server application for srv%s" % (srv + 1))
+        srvName = 'srv%s' % (srv + 1)
+        srvIP = network.get('srv%s' % (srv + 1)).IP()
+        port  = 6666
+        print(srvName, srvIP, port)
+        #print ( "From server srv%s " % (srv + 1) + network.get('srv%s' % (srv + 1)).cmd("python MininetServer.py %s %s %s" % (srvName,srvIP, port) ))
+        network.get('srv%s' % (srv + 1)).sendCmd("python MininetServer.py %s %s %s" % (srvName,srvIP, port) )
+
+    for h in range(numberOfHost):
+        print("Launch of server application for h%s" % (h + 1))
+        hostName = 'h%s' % (h + 1)
+        hostIP = network.get('h%s' % (h + 1)).IP()
+        srvIP = network.get('srv%s' % (h + 1)).IP()
+        port  = 6666
+        print(hostName, hostIP, srvIP,port)
+        network.get('h%s' % (h + 1)).sendCmd("python MininetClient.py %s %s %s %s" % (hostName, hostIP, srvIP, port))
+    
+    hosts = network.hosts
+    # Create polling object
+    fds = [ host.stdout.fileno() for host in hosts ]
+    # The poll() system call, supported on most Unix systems, provides better scalability for network servers that service many, 
+    # many clients at the same time. poll() scales better because the system call only requires listing the file descriptors of interest,
+    #  while select() builds a bitmap, turns on bits for the fds of interest, and then afterward the whole bitmap has to be linearly scanned again. 
+    # select() is O(highest file descriptor), while poll() is O(number of file descriptors).
+    poller = poll()
+    for fd in fds:
+        # Register a file descriptor with the polling object. Future calls to the poll() method
+        #  will then check whether the file descriptor has any pending I/O events. fd can be either an integer, 
+        # or an object with a fileno() method that returns an integer. File objects implement fileno(), 
+        # so they can also be used as the argument.
+        poller.register( fd, POLLIN ) # POLLIN There is data to read
+    # Monitor output
+    endTime = time() + 300
+    while time() < endTime:
+    # When poll() is called on the poll object, it blocks for specified number of milliseconds waiting 
+    # for I/O events that were registered through the register() method.
+        readable = poller.poll(1000)
+        for fd, _bitmask in readable:
+            node = Node.outToNode[ fd ] # mapping of output fds to nodes
+            print '%s:' % node.name, node.monitor().strip()
+
+    #print(network.get('h1').monitor(timeoutms = 240000))
 
     # listHost[0].cmd(TLP_activation)
     # listHost[0].cmd(" python MininetClient.py ")
