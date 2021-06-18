@@ -17,6 +17,7 @@ import datetime
 temps_debut_emission = None
 temps_trfrt = 0
 thread_dict = {}
+verrou_write = threading.RLock()
 class ServerThread(threading.Thread):
 
     def __init__(self, clientsocket, names_files):
@@ -59,83 +60,90 @@ class ServerThread(threading.Thread):
                     self.write = False
                 # Sinon c'est qu'une seonce est écoulé, nous écrivons :
                 else:
+                    with verrou_write:
+                        # Ouvre le fichier et on récupère le contenue :
+                        self.file_thread = open(self.name_file,'r')
+                        self.lines = self.file_thread.readlines()
+                        self.file_thread.close()
+                        # Si le fichier n'est pas vide alors :
+                        if self.lines != []:
+                            # Si la dernière ligne du fichier est le même que le temps mesuré alors :
+                            if self.lines[len(self.lines)-1].split()[0] == str(temps_trfrt+1):
+                                # On récupère le débit :
+                                self.value_dict = thread_dict.get(self.thread_name)
+                                # Réinitialise le débit du thread dans le dictionnaire :
+                                thread_dict[self.thread_name] = 0
+                                # Fait la somme de celui du fichier et celui du dictionnaire et réécrit au même temps:
+                                self.value_dict  = self.value_dict + int(self.lines[len(self.lines)-1].split()[2])
+                                self.lines[len(self.lines)-1] = str(temps_trfrt+1) + " ; " + str(self.value_dict) + "\n"
+                                self.file_thread = open(self.name_file, 'w')
+                                self.file_thread.writelines(self.lines)
+                                self.file_thread.close()
+                            # Sinon on écrit avec un nouveau temps :
+                            else:
+                                open(self.name_file, 'a').write(str(temps_trfrt+1) + " ; " + str(thread_dict.get(self.thread_name)) + "\n")
+                                open(self.name_file, 'a').close()
+                                # Réinitialisation du thread :
+                                thread_dict[self.thread_name] = 0
+                        # Sinon le fichier est vide alors :
+                        else:
+                            open(self.name_file, 'a').write(str(temps_trfrt+1) + " ; " + str(thread_dict.get(self.thread_name)) + "\n")
+                            open(self.name_file, 'a').close()
+                            thread_dict[self.thread_name] = 0
+
                     # Temps en seconde:
                     temps_trfrt = round(time.perf_counter() - temps_debut_emission)
                     self.write = True
-                    # Ouvre le fichier et on récupère le contenue :
+
+                self.msg_recu = self.clientsocket.recv(1448)
+
+
+            # Si c'est le dernier paquet alors :
+            if (not self.write) and self.flag_pkt == 'L':
+                with verrou_write:
                     self.file_thread = open(self.name_file,'r')
                     self.lines = self.file_thread.readlines()
                     self.file_thread.close()
-                    # Si le fichier n'est pas vide alors :
                     if self.lines != []:
-                        # Si la dernière ligne du fichier est le même que le temps mesuré alors :
                         if self.lines[len(self.lines)-1].split()[0] == str(temps_trfrt+1):
-                            # On récupère le débit :
                             self.value_dict = thread_dict.get(self.thread_name)
-                            # Réinitialise le débit du thread dans le dictionnaire :
                             thread_dict[self.thread_name] = 0
-                            # Fait la somme de celui du fichier et celui du dictionnaire et réécrit au même temps:
                             self.value_dict  = self.value_dict + int(self.lines[len(self.lines)-1].split()[2])
                             self.lines[len(self.lines)-1] = str(temps_trfrt+1) + " ; " + str(self.value_dict) + "\n"
                             self.file_thread = open(self.name_file, 'w')
                             self.file_thread.writelines(self.lines)
                             self.file_thread.close()
-                        # Sinon on écrit avec un nouveau temps :
                         else:
                             open(self.name_file, 'a').write(str(temps_trfrt+1) + " ; " + str(thread_dict.get(self.thread_name)) + "\n")
                             open(self.name_file, 'a').close()
-                            # Réinitialisation du thread :
                             thread_dict[self.thread_name] = 0
-                    # Sinon le fichier est vide alors :
                     else:
                         open(self.name_file, 'a').write(str(temps_trfrt+1) + " ; " + str(thread_dict.get(self.thread_name)) + "\n")
                         open(self.name_file, 'a').close()
                         thread_dict[self.thread_name] = 0
-                self.msg_recu = self.clientsocket.recv(1448)
-            # Si c'est le dernier paquet alors :
-            if (not self.write) and self.flag_pkt == 'L':
-                self.file_thread = open(self.name_file,'r')
-                self.lines = self.file_thread.readlines()
-                self.file_thread.close()
-                if self.lines != []:
-                    if self.lines[len(self.lines)-1].split()[0] == str(temps_trfrt+1):
-                        self.value_dict = thread_dict.get(self.thread_name)
-                        thread_dict[self.thread_name] = 0
-                        self.value_dict  = self.value_dict + int(self.lines[len(self.lines)-1].split()[2])
-                        self.lines[len(self.lines)-1] = str(temps_trfrt+1) + " ; " + str(self.value_dict) + "\n"
-                        self.file_thread = open(self.name_file, 'w')
-                        self.file_thread.writelines(self.lines)
-                        self.file_thread.close()
-                    else:
-                        open(self.name_file, 'a').write(str(temps_trfrt+1) + " ; " + str(thread_dict.get(self.thread_name)) + "\n")
-                        open(self.name_file, 'a').close()
-                        thread_dict[self.thread_name] = 0
-                else:
-                    open(self.name_file, 'a').write(str(temps_trfrt+1) + " ; " + str(thread_dict.get(self.thread_name)) + "\n")
-                    open(self.name_file, 'a').close()
-                    thread_dict[self.thread_name] = 0
             # Si c'est un paquet courant :
             elif (not self.write) and self.flag_pkt == 'C':
-                self.file_thread = open(self.name_file,'r')
-                self.lines = self.file_thread.readlines()
-                self.file_thread.close()
-                if self.lines != []:
-                    if self.lines[len(self.lines)-1].split()[0] == str(temps_trfrt+1):
-                        self.value_dict = thread_dict.get(self.thread_name)
-                        thread_dict[self.thread_name] = 0
-                        self.value_dict = self.value_dict + int(self.lines[len(self.lines)-1].split()[2])
-                        self.lines[len(self.lines)-1] = str(temps_trfrt+1) + " ; " + str(self.value_dict) + "\n"
-                        self.file_thread = open(self.name_file, 'w')
-                        self.file_thread.writelines(self.lines)
-                        self.file_thread.close()
+                with verrou_write:
+                    self.file_thread = open(self.name_file,'r')
+                    self.lines = self.file_thread.readlines()
+                    self.file_thread.close()
+                    if self.lines != []:
+                        if self.lines[len(self.lines)-1].split()[0] == str(temps_trfrt+1):
+                            self.value_dict = thread_dict.get(self.thread_name)
+                            thread_dict[self.thread_name] = 0
+                            self.value_dict = self.value_dict + int(self.lines[len(self.lines)-1].split()[2])
+                            self.lines[len(self.lines)-1] = str(temps_trfrt+1) + " ; " + str(self.value_dict) + "\n"
+                            self.file_thread = open(self.name_file, 'w')
+                            self.file_thread.writelines(self.lines)
+                            self.file_thread.close()
+                        else:
+                            open(self.name_file, 'a').write(str(temps_trfrt+1) + " ; " + str(thread_dict.get(self.thread_name)) + "\n")
+                            open(self.name_file, 'a').close()
+                            thread_dict[self.thread_name] = 0
                     else:
                         open(self.name_file, 'a').write(str(temps_trfrt+1) + " ; " + str(thread_dict.get(self.thread_name)) + "\n")
                         open(self.name_file, 'a').close()
                         thread_dict[self.thread_name] = 0
-                else:
-                    open(self.name_file, 'a').write(str(temps_trfrt+1) + " ; " + str(thread_dict.get(self.thread_name)) + "\n")
-                    open(self.name_file, 'a').close()
-                    thread_dict[self.thread_name] = 0
             #Affichage si la taille ne correspond pas
             if self.taille != self.taille_recu :
                 print("pb : " + str(self.taille) + " ; " + str(self.taille_recu))

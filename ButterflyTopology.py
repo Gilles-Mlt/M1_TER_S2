@@ -269,11 +269,12 @@ if __name__ == "__main__":
                 nb_time = sys.argv[index+1]
             elif(sys.argv[index] == "-rt"):
                 tlpRack_activation = sys.argv[index+1]
-            else :
+            else:
                 print("\nOptions possibles en paramètres sont :")
                 print(" <-c nombre_de_client> <-pkt nombre_de_paquets> <-ld liste_paquet_drop> <-t nombre_exécution> <-rt y_ou_n >")
                 print(" Format liste de chute : index_paquet,nombre_de_chute/index2,nb_chute2...")
-            
+                exit(1)
+
     elif (len(sys.argv) == 1):
         print("\n...Lancement du programme de test...")
         time.sleep(1)
